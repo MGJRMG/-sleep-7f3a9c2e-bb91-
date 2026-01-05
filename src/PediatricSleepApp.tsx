@@ -5,6 +5,8 @@ import {
   Thermometer, Stethoscope, Baby, Trash2
 } from 'lucide-react';
 
+const NOTEBOOK_LM_URL = "https://notebooklm.google.com/notebook/165f0dbc-94f9-49cc-96d8-f61e27bc2b0f";
+
 // --- TYPEN & INTERFACES ---
 
 type AgeGroupKey = '0-3' | '4-6' | '7-12' | '13-18' | '19-36' | '36+';
@@ -19,6 +21,9 @@ interface SleepStandard {
   description: string;
   rangeStart: number;
   rangeEnd: number;
+  tooLongNapMinutes: number;   // ab wann "sehr lang"
+  latestNapEndTime: string;    // spätestes sinnvolles Nap-Ende (für Warnung C)
+  idealBedtime: string;        // "Ziel-Bettzeit" für C (einfacher Anker)
 }
 
 interface NapEntry {
@@ -45,61 +50,108 @@ interface PlannedEvent {
 
 const SLEEP_STANDARDS: Record<AgeGroupKey, SleepStandard> = {
   '0-3': {
-    rangeStart: 0, rangeEnd: 3,
-    minWake: 45, maxWake: 90, naps: 4,
+    rangeStart: 0,
+    rangeEnd: 3,
+    minWake: 45,
+    maxWake: 90,
+    naps: 4,
     label: 'Neugeborenes (0–3 Monate)',
     mode: 'window',
     bedtimeWindow: 90,
     description:
-      'In dieser Phase besteht noch kein stabiler Tag-Nacht-Rhythmus. Der Schlafdruck steigt sehr rasch an, weshalb kurze Wachphasen und mehrere Schlafepisoden über den Tag physiologisch normal sind.'
+      'In dieser Phase besteht noch kein stabiler Tag-Nacht-Rhythmus. Der Schlafdruck steigt sehr rasch an, weshalb kurze Wachphasen und mehrere Schlafepisoden über den Tag verteilt physiologisch normal sind.',
+
+    // Erweiterungen
+    tooLongNapMinutes: 150,
+    latestNapEndTime: '18:00',
+    idealBedtime: '20:00'
   },
+
   '4-6': {
-    rangeStart: 4, rangeEnd: 6,
-    minWake: 90, maxWake: 150, naps: 3,
+    rangeStart: 4,
+    rangeEnd: 6,
+    minWake: 90,
+    maxWake: 150,
+    naps: 3,
     label: 'Säugling (4–6 Monate)',
     mode: 'window',
     bedtimeWindow: 150,
     description:
-      'Der Schlaf wird zunehmend zyklisch. Wachfenster sind der zentrale Steuerungsfaktor; kürzere Nickerchen sind altersentsprechend und erfordern häufig ein früheres erneutes Schlafangebot.'
+      'Der Schlaf wird zunehmend zyklisch. Wachfenster sind der zentrale Steuerungsfaktor. Kürzere Nickerchen sind altersentsprechend und erfordern häufig ein früheres erneutes Schlafangebot.',
+
+    tooLongNapMinutes: 150,
+    latestNapEndTime: '17:30',
+    idealBedtime: '19:30'
   },
+
   '7-12': {
-    rangeStart: 7, rangeEnd: 12,
-    minWake: 150, maxWake: 210, naps: 2,
+    rangeStart: 7,
+    rangeEnd: 12,
+    minWake: 150,
+    maxWake: 210,
+    naps: 2,
     label: 'Baby (7–12 Monate)',
     mode: 'hybrid',
     bedtimeWindow: 210,
     description:
-      'Der zirkadiane Rhythmus stabilisiert sich zunehmend. Der Übergang auf zwei Nickerchen erfolgt schrittweise; die letzte Wachphase des Tages ist in der Regel die längste.'
+      'Der zirkadiane Rhythmus stabilisiert sich zunehmend. Der Übergang auf zwei Nickerchen erfolgt schrittweise. Die letzte Wachphase des Tages ist in der Regel die längste und besonders sensibel für Übermüdung.',
+
+    tooLongNapMinutes: 150,
+    latestNapEndTime: '16:30',
+    idealBedtime: '19:30'
   },
+
   '13-18': {
-    rangeStart: 13, rangeEnd: 18,
-    minWake: 210, maxWake: 300, naps: 1,
+    rangeStart: 13,
+    rangeEnd: 18,
+    minWake: 210,
+    maxWake: 300,
+    naps: 1,
     label: 'Kleinkind (13–18 Monate)',
     mode: 'hybrid',
     bedtimeWindow: 270,
     description:
-      'Phase der Umstellung auf einen Mittagsschlaf. Ein zu früher Wechsel kann Übermüdung begünstigen und zu frühem Erwachen oder unruhigerem Nachtschlaf führen.'
+      'Phase der Umstellung auf einen Mittagsschlaf. Ein zu früher Wechsel kann Übermüdung begünstigen und sich in frühem Erwachen, häufigem nächtlichem Aufwachen oder verkürztem Nachtschlaf zeigen.',
+
+    tooLongNapMinutes: 150,
+    latestNapEndTime: '15:30',
+    idealBedtime: '19:30'
   },
+
   '19-36': {
-    rangeStart: 19, rangeEnd: 36,
-    minWake: 300, maxWake: 360, naps: 1,
+    rangeStart: 19,
+    rangeEnd: 36,
+    minWake: 300,
+    maxWake: 360,
+    naps: 1,
     label: 'Kleinkind (2–3 Jahre) — Schwerpunkt',
     mode: 'clock',
     bedtimeWindow: 330,
     description:
-      'Der Tagesrhythmus wird überwiegend durch feste Uhrzeiten geprägt. Entscheidend sind ein konsistenter Mittagsschlaf sowie das gezielte Begrenzen des Tagschlafs („Nap-Capping“), um eine passende Bettzeit zuverlässig zu sichern.'
+      'Der Tagesrhythmus wird überwiegend durch feste Uhrzeiten geprägt. Zentrale Stellschrauben sind ein konsistenter Mittagsschlaf sowie das gezielte Begrenzen des Tagschlafs („Nap-Capping“), um eine altersgerechte Bettzeit zuverlässig zu sichern.',
+
+    tooLongNapMinutes: 150,
+    latestNapEndTime: '15:30',
+    idealBedtime: '19:30'
   },
+
   '36+': {
-    rangeStart: 37, rangeEnd: 60,
-    minWake: 360, maxWake: 720, naps: 0,
+    rangeStart: 37,
+    rangeEnd: 60,
+    minWake: 360,
+    maxWake: 720,
+    naps: 0,
     label: 'Vorschulkind (3–5 Jahre)',
     mode: 'clock',
     bedtimeWindow: 720,
     description:
-      'Der Mittagsschlaf entfällt zunehmend. Eine verlässliche Tagesstruktur mit ruhiger Abendroutine und konstanter Bettzeit ist meist wirksamer als ein erzwungener Tagschlaf.'
+      'Der Mittagsschlaf entfällt zunehmend. Eine verlässliche Tagesstruktur mit ruhiger Abendroutine und konstanter Bettzeit ist in diesem Alter meist wirksamer als ein erzwungener Tagschlaf.',
+
+    tooLongNapMinutes: 120,
+    latestNapEndTime: '15:00',
+    idealBedtime: '20:00'
   }
 };
-
 // --- HELPER FUNCTIONS ---
 
 const timeToMinutes = (time: string): number => {
@@ -190,64 +242,140 @@ const PediatricSleepApp: React.FC = () => {
 
     // 2. Vergangene Naps
     naps.forEach((nap, index) => {
-      const isCrapNap = nap.duration < 45;
-      events.push({
-        type: 'nap',
-        startTime: nap.startTime,
-        endTime: nap.endTime,
-        title: `Nickerchen ${index + 1}`,
-        description: `${nap.duration} min. ${isCrapNap ? '⚠️ Kurznap' : '✅ Erholsam'}.`,
-        reasoning: isCrapNap
-          ? 'Kurznap (< 45 min): Der Schlafdruck wird nur teilweise reduziert – das nächste Müdigkeitsfenster tritt meist früher auf.'
-          : 'Längerer Nap: Bessere Erholung und häufig stabilere Wachphase im Anschluss.',
-        isPrediction: false,
-        alertLevel: isCrapNap ? 'warning' : 'normal'
-      });
-      currentTime = nap.endTime;
-      napsPlanned++;
+  const isCrapNap = nap.duration < 45;
+  const isTooLong = nap.duration > std.tooLongNapMinutes;
 
-      if (isCrapNap && index < std.naps - 1) {
-        warnings.push(`Nickerchen ${index + 1} war kurz. Das nächste Wachfenster eher verkürzen, um Übermüdung zu vermeiden.`);
-      }
-    });
+  let description = `${nap.duration} min.`;
+  let reasoning = '';
+  let alertLevel: 'normal' | 'warning' | 'critical' = 'normal';
+
+  if (isCrapNap) {
+    description += ' ⚠️ Kurz';
+    reasoning =
+      'Kurzer Nap: Ein Schlafzyklus wurde vermutlich nicht vollendet. ' +
+      'Der Schlafdruck wird nur teilweise abgebaut → nächstes Wachfenster eher kürzer planen.';
+    alertLevel = 'warning';
+  } else if (isTooLong) {
+    description += ' ⚠️ Sehr lang';
+    reasoning =
+      'Sehr langer Tagschlaf kann den Schlafdruck für die Nacht reduzieren ("Sleep Pressure stealing"). ' +
+      'Das kann zu später Bettzeit, nächtlichem Wachsein oder frühem Erwachen führen.';
+    alertLevel = 'warning';
+  } else {
+    description += ' ✅ Erholsam';
+    reasoning =
+      'Gute Nap-Länge: Unterstützt Erholung und Stabilität, ohne den Nachtschlaf unnötig zu beeinträchtigen.';
+    alertLevel = 'normal';
+  }
+
+  events.push({
+    type: 'nap',
+    startTime: nap.startTime,
+    endTime: nap.endTime,
+    title: `Nickerchen ${index + 1}`,
+    description,
+    reasoning,
+    isPrediction: false,
+    alertLevel
+  });
+
+  currentTime = nap.endTime;
+  napsPlanned++;
+
+  if (isCrapNap && index < std.naps - 1) {
+    warnings.push(`Nap ${index + 1} war kurz. Nächstes Wachfenster etwas verkürzen.`);
+  }
+});
+
 
     // 3. Vorhersage
-    const remainingNaps = Math.max(0, std.naps - napsPlanned);
-    let nextWakeWindow = specificWakeWindow;
+const remainingNaps = Math.max(0, std.naps - napsPlanned);
+let nextWakeWindow = specificWakeWindow;
 
-    if (naps.length > 0) {
-      const lastNap = naps[naps.length - 1];
-      if (lastNap.duration < 45) {
-        nextWakeWindow = nextWakeWindow * 0.85;
-      }
-    }
+// Kurznap-Adjustment: nach sehr kurzem Nap wird das nächste Wachfenster reduziert
+if (naps.length > 0) {
+  const lastNap = naps[naps.length - 1];
+  if (lastNap.duration < 45) {
+    nextWakeWindow = Math.round(nextWakeWindow * 0.85);
+  }
+}
 
-    for (let i = 0; i < remainingNaps; i++) {
-      const isLastNap = (napsPlanned + i + 1) === std.naps;
-      const predictedNapStart = addMinutes(currentTime, nextWakeWindow);
-      const predictedDuration = (std.naps >= 3 && isLastNap) ? 30 : 90;
-      const predictedNapEnd = addMinutes(predictedNapStart, predictedDuration);
-      const wakeHours = Math.round((nextWakeWindow / 60) * 10) / 10;
+// Für "Clock"-Modus (v.a. 19–36 Monate): Planung eher nach Uhrzeit als nach Wachfenster
+const isClockMode = std.mode === 'clock';
 
-      events.push({
-        type: 'nap',
-        startTime: predictedNapStart,
-        endTime: predictedNapEnd,
-        title: `Vorschlag: Nap ${napsPlanned + i + 1}`,
-        description: `Voraussichtliche Dauer: ca. ${predictedDuration} Min.`,
-        reasoning: `Orientierungswert für ${ageMonths} Monate: Wachfenster ca. ${wakeHours} Std.`,
-        isPrediction: true
-      });
+// Optionaler Ziel-Anker (falls vorhanden)
+const idealBedtime = std.idealBedtime;
+const latestNapEndTime = std.latestNapEndTime;
 
-      currentTime = predictedNapEnd;
-      nextWakeWindow = specificWakeWindow + 15;
-    }
+
+for (let i = 0; i < remainingNaps; i++) {
+  const napNumber = napsPlanned + i + 1;
+  const isLastNap = napNumber === std.naps;
+
+  // Startzeit berechnen:
+  // - Window/Hybrid: wachfensterbasiert
+  // - Clock: (bei 1 Nap) typischer Mittagsschlaf nach Uhrzeit (Default 12:30)
+  const predictedNapStart =
+  isClockMode && std.naps === 1 && napsPlanned === 0
+    ? '12:30'
+    : addMinutes(currentTime, nextWakeWindow);
+
+  // Dauer konservativ: Standard 90 Min, bei 3-Nap-Plan letzter Nap als Catnap
+  const predictedDuration = (std.naps >= 3 && isLastNap) ? 30 : 90;
+  const predictedNapEnd = addMinutes(predictedNapStart, predictedDuration);
+
+  const wakeHours = Math.round((nextWakeWindow / 60) * 10) / 10;
+
+  // Warnung: Nap endet zu spät (schiebt Bettzeit nach hinten)
+  if (latestNapEndTime && timeToMinutes(predictedNapEnd) > timeToMinutes(latestNapEndTime)) {
+    warnings.push(
+      `Nap ${napNumber} würde voraussichtlich sehr spät enden (nach ${latestNapEndTime}). ` +
+      `Das kann die Bettzeit deutlich nach hinten verschieben – ggf. früher starten oder kürzen (Nap-Capping).`
+    );
+  }
+
+  // Optionaler Hinweis: Bei Clock-Modus lieber bei der Uhrzeit bleiben
+  const reasoningText = isClockMode && std.naps === 1
+    ? `Im Uhrzeit-Modus wird der Mittagsschlaf bewusst „by the clock“ geplant, um die innere Uhr zu stabilisieren.`
+    : `Orientierungswert für ${ageMonths} Monate: Wachfenster ca. ${wakeHours} Std.`;
+
+  events.push({
+    type: 'nap',
+    startTime: predictedNapStart,
+    endTime: predictedNapEnd,
+    title: `Vorschlag: Nap ${napNumber}`,
+    description: `Voraussichtliche Dauer: ca. ${predictedDuration} Min.`,
+    reasoning: reasoningText,
+    isPrediction: true
+  });
+
+  // Timeline-Fortschritt:
+  // - Bei Clock-Mode setzen wir currentTime auf Nap-Ende, damit Bettzeit korrekt weiter gerechnet wird.
+  // - Für weitere Naps (falls überhaupt) bleibt Logik konsistent.
+  currentTime = predictedNapEnd;
+
+  // Wachfenster für den nächsten Loop: im Tagesverlauf oft etwas länger,
+  // aber nicht zu aggressiv, um Übermüdung zu vermeiden.
+  nextWakeWindow = Math.min(std.maxWake, specificWakeWindow + 15);
+}
 
     // 4. Bettzeit
     let bedtimeWakeWindow = std.bedtimeWindow;
     if (std.mode === 'window' || std.mode === 'hybrid') {
       const progress = (ageMonths - std.rangeStart) / (std.rangeEnd - std.rangeStart);
       bedtimeWakeWindow = Math.round(std.bedtimeWindow - 15 + (30 * progress));
+    }
+
+    // Edge Case C: Letzter Nap zu spät im Verhältnis zur Ziel-Bettzeit
+    if (naps.length > 0 && idealBedtime) {
+      const lastNap = naps[naps.length - 1];
+      const projectedBedtimeMins = timeToMinutes(lastNap.endTime) + bedtimeWakeWindow;
+      if (projectedBedtimeMins > timeToMinutes(idealBedtime)) {
+        warnings.push(
+          `Der letzte Tagschlaf endet im Verhältnis zur Ziel-Bettzeit (${idealBedtime}) eher spät. ` +
+          `Das kann die Bettzeit nach hinten verschieben – ggf. Nap früher beenden oder kürzen (Nap-Capping).`
+        );
+      }
     }
 
     let bedtime = addMinutes(currentTime, bedtimeWakeWindow);
@@ -496,6 +624,36 @@ const PediatricSleepApp: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
+
+{/* NotebookLM Shortcut */}
+<div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <h3 className="font-bold text-slate-800 text-base">
+        Wissensdatenbank (NotebookLM)
+      </h3>
+      <p className="text-sm text-slate-600 mt-1">
+        Vertiefende Inhalte, Studien & Hintergrundwissen zu Schlaf, Routinen und Entwicklung.
+      </p>
+      <p className="text-xs text-slate-400 mt-1">
+        Öffnet in neuem Tab
+      </p>
+    </div>
+
+    <a
+      href={NOTEBOOK_LM_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800
+                 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm
+                 whitespace-nowrap"
+    >
+      Öffnen
+    </a>
+  </div>
+</div>
+
+
 
             {/* 1. Physiologie & Modelle */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
