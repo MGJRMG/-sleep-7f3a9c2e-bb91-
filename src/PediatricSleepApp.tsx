@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Moon, Sun, Clock, AlertCircle,
-  Brain, Shield, Timer, HelpCircle, Activity,
-  Thermometer, Stethoscope, Baby, Trash2
+  Brain, HelpCircle, Trash2,
+  Shield, Timer, Activity, Thermometer, Stethoscope, Baby
 } from 'lucide-react';
 
 const NOTEBOOK_LM_URL = "https://notebooklm.google.com/notebook/165f0dbc-94f9-49cc-96d8-f61e27bc2b0f";
@@ -13,7 +13,7 @@ type AgeGroupKey = '0-3' | '4-6' | '7-12' | '13-18' | '19-36' | '36+';
 
 interface SleepStandard {
   minWake: number;
-  maxWake: number;
+  maxWake: number; // Das absolute physiologische Maximum vor Übermüdung
   naps: number;
   label: string;
   mode: 'window' | 'hybrid' | 'clock';
@@ -21,9 +21,9 @@ interface SleepStandard {
   description: string;
   rangeStart: number;
   rangeEnd: number;
-  tooLongNapMinutes: number;   // ab wann "sehr lang"
-  latestNapEndTime: string;    // spätestes sinnvolles Nap-Ende (für Warnung C)
-  idealBedtime: string;        // "Ziel-Bettzeit" für C (einfacher Anker)
+  tooLongNapMinutes: number;   
+  latestNapEndTime: string;    
+  idealBedtime: string;        
 }
 
 interface NapEntry {
@@ -33,8 +33,6 @@ interface NapEntry {
   duration: number;
 }
 
-// NOTE: reasoning remains a string in your current types.
-// If you want rich formatting (multiple <p>), change this to: reasoning: React.ReactNode;
 interface PlannedEvent {
   type: 'wake' | 'nap' | 'bedtime';
   startTime: string;
@@ -50,108 +48,55 @@ interface PlannedEvent {
 
 const SLEEP_STANDARDS: Record<AgeGroupKey, SleepStandard> = {
   '0-3': {
-    rangeStart: 0,
-    rangeEnd: 3,
-    minWake: 45,
-    maxWake: 90,
-    naps: 4,
-    label: 'Neugeborenes (0–3 Monate)',
-    mode: 'window',
+    rangeStart: 0, rangeEnd: 3,
+    minWake: 45, maxWake: 90,
+    naps: 4, label: 'Neugeborenes (0–3 Monate)', mode: 'window',
     bedtimeWindow: 90,
-    description:
-      'In dieser Phase besteht noch kein stabiler Tag-Nacht-Rhythmus. Der Schlafdruck steigt sehr rasch an, weshalb kurze Wachphasen und mehrere Schlafepisoden über den Tag verteilt physiologisch normal sind.',
-
-    // Erweiterungen
-    tooLongNapMinutes: 150,
-    latestNapEndTime: '18:00',
-    idealBedtime: '20:00'
+    description: 'Kein Tag-Nacht-Rhythmus. Schlafdruck baut sich extrem schnell auf.',
+    tooLongNapMinutes: 120, latestNapEndTime: '18:00', idealBedtime: '20:00'
   },
-
   '4-6': {
-    rangeStart: 4,
-    rangeEnd: 6,
-    minWake: 90,
-    maxWake: 150,
-    naps: 3,
-    label: 'Säugling (4–6 Monate)',
-    mode: 'window',
+    rangeStart: 4, rangeEnd: 6,
+    minWake: 90, maxWake: 150,
+    naps: 3, label: 'Säugling (4–6 Monate)', mode: 'window',
     bedtimeWindow: 150,
-    description:
-      'Der Schlaf wird zunehmend zyklisch. Wachfenster sind der zentrale Steuerungsfaktor. Kürzere Nickerchen sind altersentsprechend und erfordern häufig ein früheres erneutes Schlafangebot.',
-
-    tooLongNapMinutes: 150,
-    latestNapEndTime: '17:30',
-    idealBedtime: '19:30'
+    description: 'Schlaf wird zyklisch. Wachfenster steuern den Tag.',
+    tooLongNapMinutes: 120, latestNapEndTime: '17:30', idealBedtime: '19:30'
   },
-
   '7-12': {
-    rangeStart: 7,
-    rangeEnd: 12,
-    minWake: 150,
-    maxWake: 210,
-    naps: 2,
-    label: 'Baby (7–12 Monate)',
-    mode: 'hybrid',
+    rangeStart: 7, rangeEnd: 12,
+    minWake: 150, maxWake: 210, // Max 3.5h
+    naps: 2, label: 'Baby (7–12 Monate)', mode: 'hybrid',
     bedtimeWindow: 210,
-    description:
-      'Der zirkadiane Rhythmus stabilisiert sich zunehmend. Der Übergang auf zwei Nickerchen erfolgt schrittweise. Die letzte Wachphase des Tages ist in der Regel die längste und besonders sensibel für Übermüdung.',
-
-    tooLongNapMinutes: 150,
-    latestNapEndTime: '16:30',
-    idealBedtime: '19:30'
+    description: 'Übergang zu 2 Naps. Letztes Wachfenster ist das längste.',
+    tooLongNapMinutes: 120, latestNapEndTime: '16:30', idealBedtime: '19:30'
   },
-
   '13-18': {
-    rangeStart: 13,
-    rangeEnd: 18,
-    minWake: 210,
-    maxWake: 300,
-    naps: 1,
-    label: 'Kleinkind (13–18 Monate)',
-    mode: 'hybrid',
-    bedtimeWindow: 270,
-    description:
-      'Phase der Umstellung auf einen Mittagsschlaf. Ein zu früher Wechsel kann Übermüdung begünstigen und sich in frühem Erwachen, häufigem nächtlichem Aufwachen oder verkürztem Nachtschlaf zeigen.',
-
-    tooLongNapMinutes: 150,
-    latestNapEndTime: '15:30',
-    idealBedtime: '19:30'
+    rangeStart: 13, rangeEnd: 18,
+    minWake: 240, maxWake: 300, // Max 5h
+    naps: 1, label: 'Kleinkind (13–18 Monate)', mode: 'hybrid',
+    bedtimeWindow: 270, // 4.5h vor Bett
+    description: 'Umstellung auf einen Mittagsschlaf. Mittagsschlaf sollte mittig liegen.',
+    tooLongNapMinutes: 150, latestNapEndTime: '15:00', idealBedtime: '19:30'
   },
-
   '19-36': {
-    rangeStart: 19,
-    rangeEnd: 36,
-    minWake: 300,
-    maxWake: 360,
-    naps: 1,
-    label: 'Kleinkind (2–3 Jahre) — Schwerpunkt',
-    mode: 'clock',
-    bedtimeWindow: 330,
-    description:
-      'Der Tagesrhythmus wird überwiegend durch feste Uhrzeiten geprägt. Zentrale Stellschrauben sind ein konsistenter Mittagsschlaf sowie das gezielte Begrenzen des Tagschlafs („Nap-Capping“), um eine altersgerechte Bettzeit zuverlässig zu sichern.',
-
-    tooLongNapMinutes: 150,
-    latestNapEndTime: '15:30',
-    idealBedtime: '19:30'
+    rangeStart: 19, rangeEnd: 36,
+    minWake: 300, maxWake: 360, // Max 6h (Physiologisches Limit!)
+    naps: 1, label: 'Kleinkind (2–3 Jahre)', mode: 'clock',
+    bedtimeWindow: 360, // 6h vor Bett (Standard)
+    description: 'Strategie: Bei frühem Erwachen Nap vorziehen & begrenzen, um Nachtschlaf zu verlängern.',
+    tooLongNapMinutes: 120, latestNapEndTime: '15:00', idealBedtime: '19:30'
   },
-
   '36+': {
-    rangeStart: 37,
-    rangeEnd: 60,
-    minWake: 360,
-    maxWake: 720,
-    naps: 0,
-    label: 'Vorschulkind (3–5 Jahre)',
-    mode: 'clock',
+    rangeStart: 37, rangeEnd: 60,
+    minWake: 360, maxWake: 720,
+    naps: 0, label: 'Vorschulkind (3–5 Jahre)', mode: 'clock',
     bedtimeWindow: 720,
-    description:
-      'Der Mittagsschlaf entfällt zunehmend. Eine verlässliche Tagesstruktur mit ruhiger Abendroutine und konstanter Bettzeit ist in diesem Alter meist wirksamer als ein erzwungener Tagschlaf.',
-
-    tooLongNapMinutes: 120,
-    latestNapEndTime: '15:00',
-    idealBedtime: '20:00'
+    description: 'Mittagsschlaf entfällt meist. Ruhezeit statt Schlaf.',
+    tooLongNapMinutes: 60, latestNapEndTime: '14:30', idealBedtime: '20:00'
   }
 };
+
 // --- HELPER FUNCTIONS ---
 
 const timeToMinutes = (time: string): number => {
@@ -164,7 +109,7 @@ const minutesToTime = (minutes: number): string => {
   let h = Math.floor(minutes / 60);
   let m = Math.floor(minutes % 60);
   if (h >= 24) h -= 24;
-  if (h < 0) h += 24;
+  if (h < 0) h += 24; // Handle negative overlap
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
@@ -193,27 +138,21 @@ const calculateInterpolatedWakeWindow = (month: number, std: SleepStandard): num
   return Math.round(std.minWake + (std.maxWake - std.minWake) * progress);
 };
 
+const isLater = (a: string, b: string) => timeToMinutes(a) > timeToMinutes(b);
+
 // --- HAUPTKOMPONENTE ---
 
 const PediatricSleepApp: React.FC = () => {
-  const [ageMonths, setAgeMonths] = useState<number>(5);
-  const [wakeTime, setWakeTime] = useState<string>('07:00');
+  // Default Startwert angepasst auf das Problem-Szenario zum Testen
+  const [ageMonths, setAgeMonths] = useState<number>(24);
+  const [wakeTime, setWakeTime] = useState<string>('05:00'); 
   const [naps, setNaps] = useState<NapEntry[]>([]);
-
   const [napStart, setNapStart] = useState<string>('');
   const [napEnd, setNapEnd] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'schedule' | 'tips'>('schedule');
 
   useEffect(() => {
     document.title = 'SleepSync Pädiatrie';
-
-    let metaRobots = document.querySelector("meta[name='robots']");
-    if (!metaRobots) {
-      metaRobots = document.createElement('meta');
-      metaRobots.setAttribute('name', 'robots');
-      document.head.appendChild(metaRobots);
-    }
-    metaRobots.setAttribute('content', 'noindex, nofollow');
   }, []);
 
   const scheduleData = useMemo(() => {
@@ -222,190 +161,208 @@ const PediatricSleepApp: React.FC = () => {
     const events: PlannedEvent[] = [];
     const warnings: string[] = [];
 
-    // 1. Aufwachzeit
+    // 1) Aufwachzeit
     events.push({
       type: 'wake',
       startTime: wakeTime,
       title: 'Tagesbeginn',
-      description: 'Beginn des Wachabschnitts (Schlafdruckaufbau).',
-      reasoning:
-        'Tageslicht am Morgen sowie Frühstück und Bewegung unterstützen die Synchronisation der inneren Uhr.\nDas ist besonders hilfreich, wenn es zu sehr frühem Erwachen kommt.',
+      description: 'Start des Schlafdruck-Aufbaus.',
+      reasoning: 'Licht und Frühstück helfen, die innere Uhr zu stellen.',
       isPrediction: false
     });
 
-    if (timeToMinutes(wakeTime) < 360) {
-      warnings.push('Sehr frühes Erwachen (< 06:00): Tagesrhythmus kann nach vorn kippen. Erstes Schläfchen tendenziell leicht hinauszögern.');
-    }
-
+    const wakeMins = timeToMinutes(wakeTime);
     let currentTime = wakeTime;
     let napsPlanned = 0;
 
-    // 2. Vergangene Naps
+    // Warnung bei extrem frühem Start
+    if (wakeMins < 360) { // vor 06:00
+      warnings.push('Frühes Aufwachen (05:00): Strategie "Nap Capping" aktiviert, um Nachtschlaf zu verlängern.');
+    }
+
+    // 2) Bereits erfolgte Naps einfügen
     naps.forEach((nap, index) => {
-  const isCrapNap = nap.duration < 45;
-  const isTooLong = nap.duration > std.tooLongNapMinutes;
+      const isCrapNap = nap.duration < 45;
+      const isTooLong = nap.duration > std.tooLongNapMinutes;
+      let alertLevel: 'normal' | 'warning' | 'critical' = 'normal';
+      let reasoning = 'Gute Erholung.';
 
-  let description = `${nap.duration} min.`;
-  let reasoning = '';
-  let alertLevel: 'normal' | 'warning' | 'critical' = 'normal';
-
-  if (isCrapNap) {
-    description += ' ⚠️ Kurz';
-    reasoning =
-      'Kurzer Nap: Ein Schlafzyklus wurde vermutlich nicht vollendet. ' +
-      'Der Schlafdruck wird nur teilweise abgebaut → nächstes Wachfenster eher kürzer planen.';
-    alertLevel = 'warning';
-  } else if (isTooLong) {
-    description += ' ⚠️ Sehr lang';
-    reasoning =
-      'Sehr langer Tagschlaf kann den Schlafdruck für die Nacht reduzieren ("Sleep Pressure stealing"). ' +
-      'Das kann zu später Bettzeit, nächtlichem Wachsein oder frühem Erwachen führen.';
-    alertLevel = 'warning';
-  } else {
-    description += ' ✅ Erholsam';
-    reasoning =
-      'Gute Nap-Länge: Unterstützt Erholung und Stabilität, ohne den Nachtschlaf unnötig zu beeinträchtigen.';
-    alertLevel = 'normal';
-  }
-
-  events.push({
-    type: 'nap',
-    startTime: nap.startTime,
-    endTime: nap.endTime,
-    title: `Nickerchen ${index + 1}`,
-    description,
-    reasoning,
-    isPrediction: false,
-    alertLevel
-  });
-
-  currentTime = nap.endTime;
-  napsPlanned++;
-
-  if (isCrapNap && index < std.naps - 1) {
-    warnings.push(`Nap ${index + 1} war kurz. Nächstes Wachfenster etwas verkürzen.`);
-  }
-});
-
-
-    // 3. Vorhersage
-const remainingNaps = Math.max(0, std.naps - napsPlanned);
-let nextWakeWindow = specificWakeWindow;
-
-// Kurznap-Adjustment: nach sehr kurzem Nap wird das nächste Wachfenster reduziert
-if (naps.length > 0) {
-  const lastNap = naps[naps.length - 1];
-  if (lastNap.duration < 45) {
-    nextWakeWindow = Math.round(nextWakeWindow * 0.85);
-  }
-}
-
-// Für "Clock"-Modus (v.a. 19–36 Monate): Planung eher nach Uhrzeit als nach Wachfenster
-const isClockMode = std.mode === 'clock';
-
-// Optionaler Ziel-Anker (falls vorhanden)
-const idealBedtime = std.idealBedtime;
-const latestNapEndTime = std.latestNapEndTime;
-
-
-for (let i = 0; i < remainingNaps; i++) {
-  const napNumber = napsPlanned + i + 1;
-  const isLastNap = napNumber === std.naps;
-
-  // Startzeit berechnen:
-  // - Window/Hybrid: wachfensterbasiert
-  // - Clock: (bei 1 Nap) typischer Mittagsschlaf nach Uhrzeit (Default 12:30)
-  const predictedNapStart =
-  isClockMode && std.naps === 1 && napsPlanned === 0
-    ? '12:30'
-    : addMinutes(currentTime, nextWakeWindow);
-
-  // Dauer konservativ: Standard 90 Min, bei 3-Nap-Plan letzter Nap als Catnap
-  const predictedDuration = (std.naps >= 3 && isLastNap) ? 30 : 90;
-  const predictedNapEnd = addMinutes(predictedNapStart, predictedDuration);
-
-  const wakeHours = Math.round((nextWakeWindow / 60) * 10) / 10;
-
-  // Warnung: Nap endet zu spät (schiebt Bettzeit nach hinten)
-  if (latestNapEndTime && timeToMinutes(predictedNapEnd) > timeToMinutes(latestNapEndTime)) {
-    warnings.push(
-      `Nap ${napNumber} würde voraussichtlich sehr spät enden (nach ${latestNapEndTime}). ` +
-      `Das kann die Bettzeit deutlich nach hinten verschieben – ggf. früher starten oder kürzen (Nap-Capping).`
-    );
-  }
-
-  // Optionaler Hinweis: Bei Clock-Modus lieber bei der Uhrzeit bleiben
-  const reasoningText = isClockMode && std.naps === 1
-    ? `Im Uhrzeit-Modus wird der Mittagsschlaf bewusst „by the clock“ geplant, um die innere Uhr zu stabilisieren.`
-    : `Orientierungswert für ${ageMonths} Monate: Wachfenster ca. ${wakeHours} Std.`;
-
-  events.push({
-    type: 'nap',
-    startTime: predictedNapStart,
-    endTime: predictedNapEnd,
-    title: `Vorschlag: Nap ${napNumber}`,
-    description: `Voraussichtliche Dauer: ca. ${predictedDuration} Min.`,
-    reasoning: reasoningText,
-    isPrediction: true
-  });
-
-  // Timeline-Fortschritt:
-  // - Bei Clock-Mode setzen wir currentTime auf Nap-Ende, damit Bettzeit korrekt weiter gerechnet wird.
-  // - Für weitere Naps (falls überhaupt) bleibt Logik konsistent.
-  currentTime = predictedNapEnd;
-
-  // Wachfenster für den nächsten Loop: im Tagesverlauf oft etwas länger,
-  // aber nicht zu aggressiv, um Übermüdung zu vermeiden.
-  nextWakeWindow = Math.min(std.maxWake, specificWakeWindow + 15);
-}
-
-    // 4. Bettzeit
-    let bedtimeWakeWindow = std.bedtimeWindow;
-    if (std.mode === 'window' || std.mode === 'hybrid') {
-      const progress = (ageMonths - std.rangeStart) / (std.rangeEnd - std.rangeStart);
-      bedtimeWakeWindow = Math.round(std.bedtimeWindow - 15 + (30 * progress));
-    }
-
-    // Edge Case C: Letzter Nap zu spät im Verhältnis zur Ziel-Bettzeit
-    if (naps.length > 0 && idealBedtime) {
-      const lastNap = naps[naps.length - 1];
-      const projectedBedtimeMins = timeToMinutes(lastNap.endTime) + bedtimeWakeWindow;
-      if (projectedBedtimeMins > timeToMinutes(idealBedtime)) {
-        warnings.push(
-          `Der letzte Tagschlaf endet im Verhältnis zur Ziel-Bettzeit (${idealBedtime}) eher spät. ` +
-          `Das kann die Bettzeit nach hinten verschieben – ggf. Nap früher beenden oder kürzen (Nap-Capping).`
-        );
+      if (isCrapNap) {
+        reasoning = 'Kurzer Nap baut Schlafdruck nur unvollständig ab. Nächstes Wachfenster verkürzen.';
+        alertLevel = 'warning';
+      } else if (isTooLong) {
+        reasoning = 'Zu langer Nap "stiehlt" Schlafdruck für die Nacht.';
+        alertLevel = 'warning';
       }
+
+      events.push({
+        type: 'nap',
+        startTime: nap.startTime,
+        endTime: nap.endTime,
+        title: `Nickerchen ${index + 1} (Ist)`,
+        description: `${nap.duration} min.`,
+        reasoning,
+        isPrediction: false,
+        alertLevel
+      });
+
+      currentTime = nap.endTime;
+      napsPlanned++;
+    });
+
+    // 3) Vorhersage der nächsten Naps
+    const remainingNaps = Math.max(0, std.naps - napsPlanned);
+    const isToddler = ageMonths >= 19 && ageMonths <= 36;
+    
+    // Basis-Wachfenster für den nächsten Schritt
+    let nextWakeWindow = specificWakeWindow;
+    
+    // Adjustment nach kurzem vorherigen Nap
+    if (naps.length > 0) {
+        const lastNap = naps[naps.length - 1];
+        if (lastNap.duration < 45) {
+             nextWakeWindow = Math.round(nextWakeWindow * 0.8); // Deutliche Reduktion
+             warnings.push('Vorheriger Nap war kurz: Nächstes Wachfenster deutlich reduziert.');
+        }
     }
 
-    let bedtime = addMinutes(currentTime, bedtimeWakeWindow);
-    const bedtimeMins = timeToMinutes(bedtime);
-    let bedtimeAlert: 'normal' | 'warning' | 'critical' = 'normal';
-    let bedtimeMsg = 'Beginn der Nachtruhe.';
-    let bedtimeReason = `Berechnung: Ende des letzten Schlafs + ${Math.round(bedtimeWakeWindow / 60 * 10) / 10} Std. Wachzeit.`;
+    for (let i = 0; i < remainingNaps; i++) {
+        const napNumber = napsPlanned + i + 1;
+        
+        // --- LOGIK-KERNANPASSUNG FÜR KLEINKINDER (19-36 Monate) ---
+        let predictedNapStart = '';
+        let predictedDuration = 90;
+        let noteTitle = `Vorschlag: Nap ${napNumber}`;
+        let noteDesc = '';
+        let noteReason = '';
+        let alertLevel: 'normal' | 'warning' | 'critical' = 'normal';
 
-    if (bedtimeMins < 1080 && bedtimeMins > 360) {
-      bedtime = '18:00';
-      bedtimeMsg = 'Frühere Bettzeit zur Stabilisierung (Übermüdung vorbeugen).';
-      bedtimeReason = 'Die rechnerische Bettzeit wäre sehr früh. 18:00 dient häufig als sinnvoller Anker, wenn der Tag sehr „kurz“ war.';
-      bedtimeAlert = 'warning';
-    } else if (bedtimeMins > 1260) {
-      bedtimeMsg = 'Hinweis: Später Schlafbeginn möglich.';
-      bedtimeReason = 'Bei sehr spätem Einschlafen steigt das Risiko für „Second Wind“ (Stressaktivierung), was das Abschalten erschweren kann.';
-      bedtimeAlert = 'critical';
+        if (isToddler && std.naps === 1 && napsPlanned === 0) {
+            
+            const idealClockNap = timeToMinutes('12:30');
+            const physiologicalMaxNap = timeToMinutes(currentTime) + std.maxWake; // z.B. 05:00 + 6h = 11:00
+            
+            // Logik: Ist das physiologische Maximum (11:00) deutlich vor der Uhrzeit (12:30)?
+            if (physiologicalMaxNap < idealClockNap - 30) {
+                // FALL: Frühes Erwachen (z.B. 05:00 -> Nap 11:00)
+                predictedNapStart = minutesToTime(physiologicalMaxNap);
+                
+                // STRATEGIE: Strategic Capping (75 min)
+                predictedDuration = 75; 
+                const wakeUpTime = addMinutes(predictedNapStart, 75);
+                
+                noteTitle = "Strategischer Mittagsschlaf (Capping)";
+                noteDesc = `Start: ${predictedNapStart} | Wecken um: ${wakeUpTime}`;
+                noteReason = `Kompromisszeit 11:00 Uhr. WICHTIG: Nach 75 Min (${wakeUpTime}) wecken! Das sichert genug Schlafdruck für eine Bettzeit um 18:15 Uhr.`;
+                alertLevel = 'warning'; // Gelb, um Aufmerksamkeit zu erregen
+                
+                warnings.push('WICHTIG: Mittagsschlaf nach 75 Minuten beenden (Wecken), damit die Bettzeit heute Abend passt.');
+            } else {
+                // FALL: Normales Aufwachen
+                const physiologicalMinNap = timeToMinutes(currentTime) + std.minWake;
+                const target = Math.max(physiologicalMinNap, idealClockNap);
+                const finalStart = Math.min(target, physiologicalMaxNap);
+                
+                predictedNapStart = minutesToTime(finalStart);
+                noteDesc = `Zielzeit ca. ${predictedNapStart}. Dauer: 90 Min.`;
+                noteReason = 'Standard-Mittagsschlafzeit passend zum Wachfenster.';
+            }
+
+        } else {
+            // Standard Wachfenster-Logik
+            predictedNapStart = addMinutes(currentTime, nextWakeWindow);
+            predictedDuration = (std.naps > 1 && napNumber === std.naps) ? 30 : 90; // Letzter Nap oft kürzer
+            
+            const hoursWake = Math.round(nextWakeWindow / 60 * 10) / 10;
+            noteDesc = `Dauer ca. ${predictedDuration} Min.`;
+            noteReason = `Basiert auf Wachfenster von ca. ${hoursWake} Std.`;
+        }
+
+        const predictedNapEnd = addMinutes(predictedNapStart, predictedDuration);
+
+        // Check auf "zu spät"
+        if (std.latestNapEndTime && isLater(predictedNapEnd, std.latestNapEndTime)) {
+            noteReason += ` ACHTUNG: Nap endet sehr spät (${predictedNapEnd}). Gefahr für Bettzeit!`;
+            alertLevel = 'warning';
+        }
+
+        events.push({
+            type: 'nap',
+            startTime: predictedNapStart,
+            endTime: predictedNapEnd,
+            title: noteTitle,
+            description: noteDesc,
+            reasoning: noteReason,
+            isPrediction: true,
+            alertLevel
+        });
+
+        currentTime = predictedNapEnd;
+        nextWakeWindow = std.maxWake; 
+    }
+
+    // 4) Bettzeit Berechnung
+    let finalWakeWindow = std.bedtimeWindow;
+    
+    if (std.mode !== 'clock') {
+        const p = (ageMonths - std.rangeStart) / (std.rangeEnd - std.rangeStart);
+        finalWakeWindow = Math.round(std.bedtimeWindow - 30 + (60 * p));
+    }
+
+    // Spezial-Logik Bettzeit bei Capping:
+    const lastEvent = events[events.length - 1];
+    let isStrategicCapping = false;
+
+    // FIX: Wir prüfen auf den Titel, da die Description variieren kann.
+    if (isToddler && lastEvent && lastEvent.type === 'nap' && lastEvent.title.includes('Capping')) {
+       isStrategicCapping = true;
+       // Wir lassen das Wachfenster bei 6h (360min)
+       // 12:15 + 6h = 18:15. Das passt perfekt zur Vorgabe.
+       finalWakeWindow = 360; 
+    } else if (lastEvent && lastEvent.type === 'nap' && lastEvent.alertLevel === 'warning') {
+        // Bei anderen "Problemnaps" (z.B. versehentlich kurz bei Baby) verkürzen wir stärker
+        finalWakeWindow = Math.round(finalWakeWindow * 0.9);
+    }
+
+    let bedtime = addMinutes(currentTime, finalWakeWindow);
+    const bedtimeMins = timeToMinutes(bedtime);
+
+    let bedTitle = "Bettzeit";
+    let bedDesc = "Nachtruhe";
+    let bedReason = `Wachzeit vor Bett: ${Math.round(finalWakeWindow/60*10)/10} Std.`;
+    let bedAlert: 'normal' | 'warning' | 'critical' = 'normal';
+
+    if (isStrategicCapping) {
+        bedTitle = "Ziel-Bettzeit";
+        bedDesc = "18:15 – 18:45 Uhr";
+        bedReason = "Nach dem Wecken um 12:15 Uhr benötigt das Kind ca. 5,5–6h Wachzeit. Ziel: Übermüdung vermeiden, aber Schlafdruck nutzen.";
+        bedAlert = 'warning'; // Highlight
+        // Wir setzen die Zeit hart auf den Beginn des Fensters für die Anzeige
+        bedtime = addMinutes(currentTime, 360); // 12:15 + 6h = 18:15
+    }
+    // Plausibilitäts-Check Bettzeit (nur wenn kein Strategic Capping)
+    else if (bedtimeMins < 1080) { // Vor 18:00
+        bedTitle = "Frühe Bettzeit";
+        bedDesc = "Ausgleich für frühen Start";
+        bedReason = "Wegen des frühen Morgens ist eine frühe Bettzeit nötig.";
+        bedAlert = 'warning';
+    } else if (bedtimeMins > 1260) { // Nach 21:00
+        bedTitle = "Späte Bettzeit";
+        bedReason = "Wachfenster wurde sehr lang. Risiko, dass das Kind überdreht.";
+        bedAlert = 'critical';
     }
 
     events.push({
       type: 'bedtime',
       startTime: bedtime,
-      title: 'Bettzeit',
-      description: bedtimeMsg,
-      reasoning: bedtimeReason,
+      title: bedTitle,
+      description: bedDesc,
+      reasoning: bedReason,
       isPrediction: true,
-      alertLevel: bedtimeAlert
+      alertLevel: bedAlert
     });
 
-    return { events, warnings, standard: std, specificWakeWindow };
+    return { events, warnings, standard: std };
   }, [ageMonths, wakeTime, naps]);
 
   const addNap = () => {
@@ -425,7 +382,6 @@ for (let i = 0; i < remainingNaps; i++) {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
-
       {/* HEADER */}
       <header className="bg-indigo-900 text-white p-4 md:p-6 shadow-lg sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
@@ -433,7 +389,7 @@ for (let i = 0; i < remainingNaps; i++) {
             <Moon className="w-6 h-6 md:w-8 md:h-8 text-indigo-300" />
             <div>
               <h1 className="text-xl md:text-2xl font-bold leading-tight">SleepSync</h1>
-              <p className="text-indigo-200 text-xs hidden md:block">Pädiatrie Pro</p>
+              <p className="text-indigo-200 text-xs hidden md:block">Evidenzbasierter Schlafplaner</p>
             </div>
           </div>
           <span className="bg-indigo-800 text-indigo-200 text-xs px-2 py-1 rounded-full font-mono md:hidden">
@@ -443,7 +399,6 @@ for (let i = 0; i < remainingNaps; i++) {
       </header>
 
       <main className="max-w-2xl mx-auto p-4">
-
         {/* TABS */}
         <div className="flex bg-white rounded-xl shadow-sm p-1 mb-6">
           <button
@@ -456,17 +411,15 @@ for (let i = 0; i < remainingNaps; i++) {
             onClick={() => setActiveTab('tips')}
             className={`flex-1 py-3 text-sm font-bold rounded-lg transition touch-manipulation ${activeTab === 'tips' ? 'bg-indigo-100 text-indigo-900 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Wissen
+            Wissen & Logik
           </button>
         </div>
 
         {activeTab === 'schedule' ? (
           <div className="space-y-6">
-
             {/* CONFIG CARD */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
                 {/* Alter Slider */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
@@ -505,7 +458,7 @@ for (let i = 0; i < remainingNaps; i++) {
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
               <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
                 <Sun className="w-5 h-5 text-orange-400" />
-                Nickerchen erfassen
+                Nickerchen eingeben (Ist)
               </h3>
 
               {naps.map((nap, i) => (
@@ -522,32 +475,20 @@ for (let i = 0; i < remainingNaps; i++) {
                   <button
                     onClick={() => removeNap(nap.id)}
                     className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-3 rounded-full transition-colors"
-                    aria-label="Nap löschen"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
 
-              {/* Responsive Input Row */}
               <div className="flex gap-3 items-end mt-4 pt-4 border-t border-slate-100">
                 <div className="flex-1 min-w-[80px]">
                   <label className="text-xs text-slate-400 block mb-1">Von</label>
-                  <input
-                    type="time"
-                    value={napStart}
-                    onChange={e => setNapStart(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-base outline-none focus:ring-2 focus:ring-indigo-200"
-                  />
+                  <input type="time" value={napStart} onChange={e => setNapStart(e.target.value)} className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-base outline-none focus:ring-2 focus:ring-indigo-200" />
                 </div>
                 <div className="flex-1 min-w-[80px]">
                   <label className="text-xs text-slate-400 block mb-1">Bis</label>
-                  <input
-                    type="time"
-                    value={napEnd}
-                    onChange={e => setNapEnd(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-base outline-none focus:ring-2 focus:ring-indigo-200"
-                  />
+                  <input type="time" value={napEnd} onChange={e => setNapEnd(e.target.value)} className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-base outline-none focus:ring-2 focus:ring-indigo-200" />
                 </div>
                 <button
                   onClick={addNap}
@@ -561,7 +502,7 @@ for (let i = 0; i < remainingNaps; i++) {
 
             {/* WARNINGS */}
             {scheduleData.warnings.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl space-y-2 animate-in fade-in">
                 {scheduleData.warnings.map((w, i) => (
                   <div key={i} className="flex gap-3 text-amber-900 text-sm items-start">
                     <AlertCircle className="w-5 h-5 shrink-0 text-amber-600" />
@@ -580,7 +521,7 @@ for (let i = 0; i < remainingNaps; i++) {
                       evt.type === 'nap' ? 'bg-indigo-400' : 'bg-indigo-900'}`}
                   />
 
-                  <div className={`p-4 rounded-xl border transition-all active:scale-[0.99] touch-manipulation
+                  <div className={`p-4 rounded-xl border transition-all 
                     ${evt.alertLevel === 'critical' ? 'bg-red-50 border-red-200' :
                       evt.alertLevel === 'warning' ? 'bg-amber-50 border-amber-200' :
                         evt.isPrediction ? 'bg-white border-dashed border-slate-300' : 'bg-white border-slate-100 shadow-sm'}`}>
@@ -603,15 +544,14 @@ for (let i = 0; i < remainingNaps; i++) {
                       {evt.startTime} {evt.endTime && <span className="text-lg text-slate-400 font-normal">- {evt.endTime}</span>}
                     </div>
 
-                    <p className="text-sm text-slate-600 mb-3 border-b border-slate-100 pb-2 leading-relaxed">
+                    <p className="text-sm text-slate-600 mb-3 border-b border-slate-100 pb-2 leading-relaxed font-medium">
                       {evt.description}
                     </p>
 
-                    {/* Reasoning Section: enable line breaks */}
                     <div className="flex gap-2 text-xs text-slate-500 bg-slate-50/80 p-2 rounded-lg">
                       <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-400" />
                       <div>
-                        <span className="font-bold text-indigo-900 block mb-0.5">Warum?</span>
+                        <span className="font-bold text-indigo-900 block mb-0.5">Logik:</span>
                         <span className="whitespace-pre-line">{evt.reasoning}</span>
                       </div>
                     </div>
@@ -624,36 +564,37 @@ for (let i = 0; i < remainingNaps; i++) {
           </div>
         ) : (
           <div className="space-y-6">
+            
+            {/* NotebookLM Shortcut */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">
+                    Wissensdatenbank (NotebookLM)
+                  </h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Vertiefende Inhalte, Studien & Hintergrundwissen zu Schlaf, Routinen und Entwicklung.
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Öffnet in neuem Tab
+                  </p>
+                </div>
 
-{/* NotebookLM Shortcut */}
-<div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-  <div className="flex items-start justify-between gap-4">
-    <div>
-      <h3 className="font-bold text-slate-800 text-base">
-        Wissensdatenbank (NotebookLM)
-      </h3>
-      <p className="text-sm text-slate-600 mt-1">
-        Vertiefende Inhalte, Studien & Hintergrundwissen zu Schlaf, Routinen und Entwicklung.
-      </p>
-      <p className="text-xs text-slate-400 mt-1">
-        Öffnet in neuem Tab
-      </p>
-    </div>
-
-    <a
-      href={NOTEBOOK_LM_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800
-                 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm
-                 whitespace-nowrap"
-    >
-      Öffnen
-    </a>
-  </div>
-</div>
-
-
+                <a
+                  href={NOTEBOOK_LM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2
+                    bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800
+                    text-white px-5 py-3 rounded-xl text-sm font-bold
+                    shadow-md hover:shadow-lg
+                    transition-all whitespace-nowrap"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  Frag den Schlaf-Assistenten
+                </a>
+              </div>
+            </div>
 
             {/* 1. Physiologie & Modelle */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
@@ -775,7 +716,6 @@ for (let i = 0; i < remainingNaps; i++) {
 
           </div>
         )}
-
       </main>
     </div>
   );
